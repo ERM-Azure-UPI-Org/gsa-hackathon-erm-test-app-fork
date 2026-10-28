@@ -3,7 +3,8 @@ GSA ERM2 MCP Toolkit
 Exposes three tools:
   - gsa_erm2_current_weather   : live weather via wttr.in
   - gsa_erm2_programming_joke  : programming joke via JokeAPI
-  - gsa_erm2_unit_converter    : local unit conversion (temperature, length, weight)
+  - gsa_erm2_unit_converter    : local unit conversion (temperature, length, weight,
+                                 volume, speed, time)
 """
 
 from __future__ import annotations
@@ -110,6 +111,39 @@ _WEIGHT_TO_KG: dict[str, float] = {
     "oz": 0.02834952,
 }
 
+# Volume: base unit = litres (gal and fl_oz are US customary)
+_VOLUME_TO_L: dict[str, float] = {
+    "l": 1.0,
+    "ml": 0.001,
+    "gal": 3.785411784,
+    "fl_oz": 0.0295735295625,
+}
+
+# Speed: base unit = metres per second
+_SPEED_TO_MS: dict[str, float] = {
+    "m/s": 1.0,
+    "km/h": 1_000.0 / 3_600.0,
+    "mph": 0.44704,
+    "knots": 1_852.0 / 3_600.0,
+}
+
+# Time: base unit = seconds
+_TIME_TO_S: dict[str, float] = {
+    "s": 1.0,
+    "min": 60.0,
+    "h": 3_600.0,
+    "d": 86_400.0,
+}
+
+# Families that convert multiplicatively via a base unit.
+_LINEAR_FAMILIES: dict[str, dict[str, float]] = {
+    "length": _LENGTH_TO_M,
+    "weight": _WEIGHT_TO_KG,
+    "volume": _VOLUME_TO_L,
+    "speed": _SPEED_TO_MS,
+    "time": _TIME_TO_S,
+}
+
 _TEMPERATURE_UNITS = {"celsius", "fahrenheit", "kelvin"}
 
 
@@ -141,6 +175,9 @@ def gsa_erm2_unit_converter(value: float, from_unit: str, to_unit: str) -> dict:
       - Temperature: celsius, fahrenheit, kelvin
       - Length:      m, km, ft, miles
       - Weight:      kg, g, lb, oz
+      - Volume:      l, ml, gal (US), fl_oz (US)
+      - Speed:       m/s, km/h, mph, knots
+      - Time:        s, min, h, d
 
     Args:
         value:     Numeric value to convert.
@@ -160,19 +197,15 @@ def gsa_erm2_unit_converter(value: float, from_unit: str, to_unit: str) -> dict:
     if from_unit in _TEMPERATURE_UNITS and to_unit in _TEMPERATURE_UNITS:
         celsius = _temp_to_celsius(value, from_unit)
         result = _celsius_to(celsius, to_unit)
-    elif from_unit in _LENGTH_TO_M and to_unit in _LENGTH_TO_M:
-        base = value * _LENGTH_TO_M[from_unit]
-        result = base / _LENGTH_TO_M[to_unit]
-    elif from_unit in _WEIGHT_TO_KG and to_unit in _WEIGHT_TO_KG:
-        base = value * _WEIGHT_TO_KG[from_unit]
-        result = base / _WEIGHT_TO_KG[to_unit]
+    elif family := next(
+        (t for t in _LINEAR_FAMILIES.values() if from_unit in t and to_unit in t),
+        None,
+    ):
+        base = value * family[from_unit]
+        result = base / family[to_unit]
     else:
         # Diagnose the problem for a useful error message
-        all_units = (
-            _TEMPERATURE_UNITS
-            | set(_LENGTH_TO_M)
-            | set(_WEIGHT_TO_KG)
-        )
+        all_units = _TEMPERATURE_UNITS.union(*_LINEAR_FAMILIES.values())
         unknown = [u for u in (from_unit, to_unit) if u not in all_units]
         if unknown:
             raise ValueError(f"Unknown unit(s): {unknown}")
